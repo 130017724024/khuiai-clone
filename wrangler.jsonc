@@ -1,0 +1,19 @@
+{
+  // รัน Worker + D1 บนเครื่อง (local) เพื่อทดสอบก่อน deploy
+  // ใช้กับ: npx wrangler dev
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "khuiai-clone",
+  "main": "deploy/worker.js",
+  "compatibility_date": "2024-09-23",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "khuiai-local",
+      "database_id": "3eecd9e1-2250-4377-b91a-05bc5a32e41a"
+    }
+  ]
+}

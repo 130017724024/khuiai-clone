@@ -178,7 +178,18 @@ npm install
 npm run dev      # Vite dev server — /api/* จะ 404 เพราะยังไม่มี Worker
 npm run build    # tsc -b && vite build → dist/
 npm run lint     # oxlint
+npm run worker   # Worker + D1 บนเครื่อง (wrangler dev) ที่ http://127.0.0.1:8788
 ```
+
+**รันเต็มระบบในเครื่อง** (แนะนำ — ได้ทั้ง API และฐานข้อมูลจริง):
+
+```bash
+npm run build     # ต้องมี dist/ ก่อน เพราะ Worker เสิร์ฟไฟล์จาก dist
+npm run worker    # wrangler dev → http://127.0.0.1:8788
+```
+
+`wrangler.jsonc` ผูก assets (`ASSETS`) + D1 local (`DB`) ให้แล้ว ตารางทั้งหมดถูกสร้างอัตโนมัติตอน request แรก
+ข้อมูล local เก็บใน `.wrangler/state` (อยู่ใน .gitignore) — ลบทิ้งเพื่อเริ่มฐานข้อมูลใหม่
 
 > `npm run dev` ใช้ดู UI ได้ แต่ฟีเจอร์ทั้งหมดต้องมี Worker + D1 จึงจะทำงาน
 > วิธีทดสอบแบบเต็มคือ build แล้ว deploy ขึ้น Sites (หรือรัน Worker ด้วย wrangler ถ้าเพิ่ม `wrangler.toml` เอง)
