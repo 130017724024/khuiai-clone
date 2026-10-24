@@ -191,6 +191,9 @@ npm run worker    # wrangler dev → http://127.0.0.1:8788
 `wrangler.jsonc` ผูก assets (`ASSETS`) + D1 local (`DB`) ให้แล้ว ตารางทั้งหมดถูกสร้างอัตโนมัติตอน request แรก
 ข้อมูล local เก็บใน `.wrangler/state` (อยู่ใน .gitignore) — ลบทิ้งเพื่อเริ่มฐานข้อมูลใหม่
 
+ถ้าจะทดสอบ Google/Facebook login บนเครื่อง: `cp .dev.vars.example .dev.vars` แล้วเติม Client ID/Secret
+(รายละเอียดใน [AUTH-SETUP.md](AUTH-SETUP.md))
+
 > `npm run dev` ใช้ดู UI ได้ แต่ฟีเจอร์ทั้งหมดต้องมี Worker + D1 จึงจะทำงาน
 > วิธีทดสอบแบบเต็มคือ build แล้ว deploy ขึ้น Sites (หรือรัน Worker ด้วย wrangler ถ้าเพิ่ม `wrangler.toml` เอง)
 
@@ -217,7 +220,9 @@ Worker จะผูก D1 ให้อัตโนมัติผ่าน bindi
 
 ## ตั้งค่า Google / Facebook Login
 
-ปุ่มทั้งสองมีอยู่จริงและเรียก `/api/auth/oauth/:provider` แต่จะตอบ `503` จนกว่าจะใส่ secrets:
+ปุ่มทั้งสองมีอยู่จริงและเรียก `/api/auth/oauth/:provider` — flow ฝั่ง Worker เสร็จและทดสอบแล้ว
+(redirect parameters, state TTL 10 นาที, token exchange, `email_verified`, ผูกบัญชีด้วยอีเมล)
+แต่จะตอบ `503` จนกว่าจะใส่ secrets ของ OAuth app **ที่คุณต้องสร้างเอง** (Google/Meta ต้องยืนยันตัวตนเจ้าของบัญชี):
 
 | Secret | ใช้ทำอะไร |
 | --- | --- |
@@ -377,7 +382,8 @@ levelBonus(L) = 50 + 50 × (L−1)
 - Session token สุ่ม 32 ไบต์ เก็บใน DB เฉพาะ **SHA-256** — ถ้า DB รั่วก็ปลอม session ไม่ได้
 - Cookie: `HttpOnly; Secure; SameSite=Lax; Max-Age=30d`
 - ทุก endpoint ที่แตะข้อมูลผู้ใช้ดึง `user_id` จาก session เท่านั้น (ไม่รับจาก client) และ query กรองด้วย `user_id` ทุกครั้ง
-- OAuth ใช้ `state` สุ่มเก็บใน DB และลบหลังใช้ (กัน replay/CSRF)
+- OAuth ใช้ `state` สุ่มเก็บใน DB, อายุ 10 นาที, ใช้ครั้งเดียวและผูกกับ provider (กัน replay/CSRF)
+- รับเฉพาะอีเมลที่ผู้ให้บริการยืนยันแล้ว (`email_verified`) และผูกบัญชีเดิมด้วยอีเมลเท่านั้น — ไม่สร้างบัญชีซ้ำ
 - การตัดคอยน์ทุกจุดอยู่ใน `DB.batch()` แบบ transactional + เงื่อนไข `coins >= ?` กันยอดติดลบเมื่อกดพร้อมกัน
 - ไม่มี secret ฝั่ง client — OAuth client secret อยู่ที่ env ของ Worker เท่านั้น
 - คืน `no-store` ทุก response ของ API เพื่อไม่ให้ cache ข้อมูลผู้ใช้
@@ -396,6 +402,8 @@ levelBonus(L) = 50 + 50 × (L−1)
 - **ภารกิจ/เลเวล**: 20/20 checks — XP จากทุกแหล่ง, claim ก่อนครบ 400, claim ซ้ำ 409, เลเวลอัปที่ 100 XP พร้อมโบนัส +100 และ ledger `levelup`
 - **กาชา**: สุ่มเดี่ยว 60 ครั้ง (pity ยิง 2 ครั้ง, ไม่มีหน้าต่าง 10 ครั้งไหนหลุด SR+), 10 สุ่ม 8 รอบ (ทุกครั้งมี SR+), invariant ผลรวมการ์ด 60 → 70
 - **อีเวนต์/แจ้งเตือน**: 15/15 checks — badge ตรงกับรางวัลจริง, รับอีเวนต์ +150, รับซ้ำ 409, หมดเวลา/ไม่ครบ 400
+- **OAuth (Google/Facebook)**: 28/28 checks กับ mock provider — redirect parameter ครบ, callback สร้างผู้ใช้+cookie, ล็อกอินซ้ำได้บัญชีเดิม, state ใช้ซ้ำ/ข้าม provider ไม่ได้, `email_verified=false` ถูกปฏิเสธ, บัญชีอีเมลเดิมผูกกับ Google ได้โดยคอยน์ไม่หาย
+- **UI OAuth**: ปุ่มเมื่อตั้งค่าแล้วพาไปหน้าผู้ให้บริการจริง, เมื่อยังไม่ตั้งค่าขึ้นข้อความอธิบายโดยไม่พาออกจากหน้า
 - **UI**: เดสก์ท็อป + มือถือ (bottom nav, badge), dropdown เปิด/ปิดด้วยคลิกนอกและ Escape, ไม่มี console error
 - `tsc -b` + `vite build` ผ่าน, `oxlint` 0 error
 
@@ -433,6 +441,7 @@ levelBonus(L) = 50 + 50 × (L−1)
 ## ข้อจำกัด
 
 - **คำตอบของตัวละครเป็นข้อความจำลอง** ไม่ได้ต่อ LLM จริง
+- **ปุ่ม Google/Facebook** ใช้งานได้ทันทีเมื่อใส่ OAuth app ของคุณเอง — ยังไม่ได้ใส่ในโปรเจกต์นี้เพราะ secrets เป็นของคุณ
 - **รูปตัวละคร hotlink จาก CDN ของ khuiai** ถ้าเขาเปลี่ยน path รูปจะหาย
 - **การเติมคอยน์เป็นเดโม** ยังไม่มีการชำระเงินจริง
 - **อีเวนต์ hardcode ใน Worker** เพิ่ม/แก้ต้อง deploy ใหม่

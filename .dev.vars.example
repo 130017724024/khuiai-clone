@@ -1,0 +1,11 @@
+# คัดลอกไฟล์นี้เป็น .dev.vars แล้วใส่ค่าจริง (ใช้กับ `npm run worker`)
+# .dev.vars ถูก gitignore ไว้ — ห้าม commit ค่าจริง
+#
+# Redirect URI ที่ต้องลงทะเบียนใน Google / Meta สำหรับการรันบนเครื่อง:
+#   http://localhost:8788/api/auth/callback/google
+#   http://localhost:8788/api/auth/callback/facebook
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+FACEBOOK_APP_ID=
+FACEBOOK_APP_SECRET=

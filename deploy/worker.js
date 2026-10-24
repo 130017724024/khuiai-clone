@@ -698,6 +698,8 @@ const PROVIDERS = {
   },
 };
 
+const OAUTH_STATE_TTL = 600; // 10 นาที พอสำหรับกดยินยอมในหน้าผู้ให้บริการ
+
 function providerEnabled(env, provider) {
   const cfg = PROVIDERS[provider];
   return Boolean(cfg && cfg.clientId(env) && cfg.clientSecret(env));
@@ -730,18 +732,22 @@ async function fetchGoogleProfile(env, request, code) {
   });
   if (!infoRes.ok) throw new Error('google userinfo failed');
   const info = await infoRes.json();
-  return { id: info.sub, email: info.email, name: info.name || info.email, avatar: info.picture };
+  if (!info.email) throw new Error('google profile has no email');
+  if (info.email_verified === false) throw new Error('google email is not verified');
+  return { id: info.sub, email: info.email, name: info.name || info.email, avatar: info.picture || null };
 }
 
 async function fetchFacebookProfile(env, request, code) {
-  const tokenUrl = new URL(PROVIDERS.facebook.token);
-  tokenUrl.search = new URLSearchParams({
-    client_id: env.FACEBOOK_APP_ID,
-    client_secret: env.FACEBOOK_APP_SECRET,
-    redirect_uri: redirectUri(request, 'facebook'),
-    code,
-  }).toString();
-  const tokenRes = await fetch(tokenUrl.toString());
+  const tokenRes = await fetch(PROVIDERS.facebook.token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: env.FACEBOOK_APP_ID,
+      client_secret: env.FACEBOOK_APP_SECRET,
+      redirect_uri: redirectUri(request, 'facebook'),
+      code,
+    }),
+  });
   if (!tokenRes.ok) throw new Error('facebook token exchange failed');
   const token = await tokenRes.json();
   const infoUrl = new URL('https://graph.facebook.com/me');
@@ -926,9 +932,15 @@ async function handleApi(request, env) {
       return json({ error: `ยังไม่ได้ตั้งค่า ${provider} OAuth` }, 503);
     }
     const state = randomToken(24);
-    await env.DB.prepare('INSERT INTO oauth_states (state, provider, redirect_to, created_at) VALUES (?, ?, ?, ?)')
-      .bind(state, provider, url.searchParams.get('redirect') || '/', now())
-      .run();
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM oauth_states WHERE created_at < ?').bind(now() - OAUTH_STATE_TTL),
+      env.DB.prepare('INSERT INTO oauth_states (state, provider, redirect_to, created_at) VALUES (?, ?, ?, ?)').bind(
+        state,
+        provider,
+        url.searchParams.get('redirect') || '/',
+        now(),
+      ),
+    ]);
 
     const cfg = PROVIDERS[provider];
     const authUrl = new URL(cfg.authorize);
@@ -958,6 +970,13 @@ async function handleApi(request, env) {
     if (!row) {
       return Response.redirect(`${originOf(request)}/login?error=${encodeURIComponent('state ไม่ถูกต้อง')}`, 302);
     }
+    if (now() - row.created_at > OAUTH_STATE_TTL) {
+      await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run();
+      return Response.redirect(
+        `${originOf(request)}/login?error=${encodeURIComponent('หมดเวลายืนยันตัวตน กรุณาลองใหม่')}`,
+        302,
+      );
+    }
     await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run();
 
     try {
@@ -972,7 +991,8 @@ async function handleApi(request, env) {
         status: 302,
         headers: { location: `${originOf(request)}${target}`, 'set-cookie': sessionCookie(token) },
       });
-    } catch {
+    } catch (err) {
+      console.error(`[oauth:${provider}]`, err && err.message ? err.message : err);
       return Response.redirect(
         `${originOf(request)}/login?error=${encodeURIComponent('เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่')}`,
         302,
